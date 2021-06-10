@@ -358,6 +358,27 @@ function tmerge(@nospecialize(typea), @nospecialize(typeb))
     typeb === Union{} && return typea
     typea === typeb && return typea
 
+    # type-lattice for MustAlias wrapper (NOTE never be merged with InterMustAlias)
+    if isa(typea, MustAlias) && isa(typeb, MustAlias)
+        if issubalias(typea, typeb)
+            return typeb
+        elseif issubalias(typeb, typea)
+            return typea
+        end
+        typea = widenmustalias(typea)
+        typeb = widenmustalias(typeb)
+    end
+    # type-lattice for InterMustAlias wrapper (NOTE never be merged with MustAlias)
+    if isa(typea, InterMustAlias) && isa(typeb, InterMustAlias)
+        if issubalias(typea, typeb)
+            return typeb
+        elseif issubalias(typeb, typea)
+            return typea
+        end
+        typea = widenmustalias(typea)
+        typeb = widenmustalias(typeb)
+    end
+
     suba = typea ⊑ typeb
     suba && issimplertype(typeb, typea) && return typeb
     subb = typeb ⊑ typea
@@ -388,7 +409,7 @@ function tmerge(@nospecialize(typea), @nospecialize(typeb))
             isa(typea, MaybeUndef) ? typea.typ : typea,
             isa(typeb, MaybeUndef) ? typeb.typ : typeb))
     end
-    # type-lattice for Conditional wrapper
+    # type-lattice for Conditional wrapper (NOTE never be merged with InterConditional)
     if isa(typea, Conditional) && isa(typeb, Const)
         if typeb.val === true
             typeb = Conditional(typea.slot, Any, Union{})
@@ -417,7 +438,7 @@ function tmerge(@nospecialize(typea), @nospecialize(typeb))
         end
         return Bool
     end
-    # type-lattice for InterConditional wrapper, InterConditional will never be merged with Conditional
+    # type-lattice for InterConditional wrapper (NOTE never be merged with Conditional)
     if isa(typea, InterConditional) && isa(typeb, Const)
         if typeb.val === true
             typeb = InterConditional(typea.slot, Any, Union{})
@@ -446,6 +467,7 @@ function tmerge(@nospecialize(typea), @nospecialize(typeb))
         end
         return Bool
     end
+
     # type-lattice for Const and PartialStruct wrappers
     if ((isa(typea, PartialStruct) || isa(typea, Const)) &&
         (isa(typeb, PartialStruct) || isa(typeb, Const)))

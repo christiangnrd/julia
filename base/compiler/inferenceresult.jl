@@ -1,5 +1,6 @@
 # This file is a part of Julia. License is MIT: https://julialang.org/license
 
+# TODO MustAlias forwarding
 function is_argtype_match(@nospecialize(given_argtype),
                           @nospecialize(cache_argtype),
                           overridden_by_const::Bool)
@@ -32,6 +33,7 @@ function matching_cache_argtypes(
     for i in 1:length(argtypes)
         argtype = argtypes[i]
         # forward `Conditional` if it conveys a constraint on any other argument
+        # TODO add similar handling for `MustAlias`
         if isa(argtype, Conditional) && fargs !== nothing
             cnd = argtype
             slotid = find_constrained_arg(cnd, fargs, sv)
@@ -54,7 +56,7 @@ function matching_cache_argtypes(
                 continue
             end
         end
-        given_argtypes[i] = widenconditional(argtype)
+        given_argtypes[i] = widenslotwrapper(argtype)
     end
     isva = def.isva
     if isva || isvarargtype(given_argtypes[end])
@@ -211,7 +213,7 @@ function cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache:
         cache_argtypes = cached_result.argtypes
         cache_overridden_by_const = cached_result.overridden_by_const
         for i in 1:nargs
-            if !is_argtype_match(given_argtypes[i],
+            if !is_argtype_match(widenmustalias(given_argtypes[i]),
                                  cache_argtypes[i],
                                  cache_overridden_by_const[i])
                 cache_match = false
