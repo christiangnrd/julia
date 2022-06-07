@@ -17,7 +17,7 @@
 #     fields::Vector{Any} # elements are other type lattice members
 # end
 import Core: Const, PartialStruct
-function PartialStruct(typ::DataType, fields::Vector{Any})
+function PartialStruct(@nospecialize(typ), fields::Vector{Any})
     for i = 1:length(fields) assert_nested_type(fields[i]) end
     return Core._PartialStruct(typ, fields)
 end
@@ -216,16 +216,19 @@ The non-strict partial order over the type inference lattice.
     elseif isa(b, PartialStruct)
         if isa(a, Const)
             nfields(a.val) == length(b.fields) || return false
-            widenconst(b).name === widenconst(a).name || return false
+            widea = widenconst(a)::DataType
+            wideb = widenconst(b)
+            wideb′ = unwrap_unionall(wideb)::DataType
+            widea.name === wideb′.name || return false
             # We can skip the subtype check if b is a Tuple, since in that
             # case, the ⊑ of the elements is sufficient.
-            if b.typ.name !== Tuple.name && !(widenconst(a) <: widenconst(b))
+            if wideb′.name !== Tuple.name && !(widea <: wideb)
                 return false
             end
             for i in 1:nfields(a.val)
                 # XXX: let's handle varargs later
                 isdefined(a.val, i) || continue # since ∀ T Union{} ⊑ T
-                ⊑(Const(getfield(a.val, i)), b.fields[i]) || return false
+                Const(getfield(a.val, i)) ⊑ b.fields[i] || return false
             end
             return true
         end
@@ -316,7 +319,7 @@ end
 # compute typeintersect over the extended inference lattice,
 # as precisely as we can,
 # where v is in the extended lattice, and t is a Type.
-function tmeet(@nospecialize(v), @nospecialize(t))
+function tmeet(@nospecialize(v), @nospecialize(t::Type))
     if isa(v, Const)
         if !has_free_typevars(t) && !isa(v.val, t)
             return Bottom
@@ -327,30 +330,30 @@ function tmeet(@nospecialize(v), @nospecialize(t))
         widev = widenconst(v)
         if widev <: t
             return v
-        end
-        ti = typeintersect(widev, t)
-        valid_as_lattice(ti) || return Bottom
-        @assert widev <: Tuple
-        new_fields = Vector{Any}(undef, length(v.fields))
-        for i = 1:length(new_fields)
-            vfi = v.fields[i]
-            if isvarargtype(vfi)
-                new_fields[i] = vfi
-            else
-                new_fields[i] = tmeet(vfi, widenconst(getfield_tfunc(t, Const(i))))
-                if new_fields[i] === Bottom
-                    return Bottom
+        elseif widev <: Tuple
+            new_fields = Vector{Any}(undef, length(v.fields))
+            for i = 1:length(new_fields)
+                vfi = v.fields[i]
+                if isvarargtype(vfi)
+                    new_fields[i] = vfi
+                else
+                    nfi = new_fields[i] = tmeet(vfi, widenconst(getfield_tfunc(t, Const(i))))
+                    if nfi === Bottom
+                        return Bottom
+                    end
                 end
             end
+            return tuple_tfunc(new_fields)
         end
-        return tuple_tfunc(new_fields)
     elseif isa(v, Conditional)
         if !(Bool <: t)
             return Bottom
         end
         return v
+    else
+        widev = widenconst(v)
     end
-    ti = typeintersect(widenconst(v), t)
+    ti = typeintersect(widev, t)
     valid_as_lattice(ti) || return Bottom
     return ti
 end

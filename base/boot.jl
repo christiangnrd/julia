@@ -433,7 +433,7 @@ eval(Core, quote
     end
     Const(@nospecialize(v)) = $(Expr(:new, :Const, :v))
     # NOTE the main constructor is defined within `Core.Compiler`
-    _PartialStruct(typ::DataType, fields::Array{Any, 1}) = $(Expr(:new, :PartialStruct, :typ, :fields))
+    _PartialStruct(@nospecialize(typ), fields::Array{Any, 1}) = $(Expr(:new, :PartialStruct, :typ, :fields))
     PartialOpaque(@nospecialize(typ), @nospecialize(env), parent::MethodInstance, source::Method) = $(Expr(:new, :PartialOpaque, :typ, :env, :parent, :source))
     MethodMatch(@nospecialize(spec_types), sparams::SimpleVector, method::Method, fully_covers::Bool) = $(Expr(:new, :MethodMatch, :spec_types, :sparams, :method, :fully_covers))
 end)
