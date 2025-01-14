@@ -7957,7 +7957,11 @@ static jl_cgval_t emit_cfunction(jl_codectx_t &ctx, jl_value_t *output_type, con
     }
 
     bool nest = (!fexpr_rt.constant || unionall_env);
+    #if JL_LLVM_VERSION < 190000
     if (ctx.emission_context.TargetTriple.isAArch64() || ctx.emission_context.TargetTriple.isARM() || ctx.emission_context.TargetTriple.isPPC64()) {
+    #else //JL_LLVM_VERSION >= 190000
+    if ((ctx.emission_context.TargetTriple.isAArch64() && !ctx.emission_context.TargetTriple.isOSLinux())  || ctx.emission_context.TargetTriple.isARM() || ctx.emission_context.TargetTriple.isPPC64()) {
+    #endif
         if (nest) {
             emit_error(ctx, "cfunction: closures are not supported on this platform");
             JL_GC_POP();
