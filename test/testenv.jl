@@ -53,7 +53,7 @@ if !@isdefined(testenv_defined)
 
     # platforms that support cfunction with closures
     # (requires LLVM back-end support for trampoline intrinsics)
-    const cfunction_closure = Sys.ARCH === :x86_64 || Sys.ARCH === :i686
+    const cfunction_closure = Sys.ARCH === :x86_64 || Sys.ARCH === :i686 || (Sys.ARCH === :aarch64 && Sys.islinux() && Base.libllvm_version > v"19")
 
     macro async_logerr(expr)
         :(@async try
