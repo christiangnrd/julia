@@ -20,11 +20,22 @@ using Base: unsorted_names, unwrap_unionall, rewrap_unionall, isdeprecated, Bott
     signature_type, format_bytes
 using Base.Libc
 using Markdown
+using StyledStrings: @styled_str, Face, addface!
 
 include("editless.jl")
 include("codeview.jl")
 include("macros.jl")
 include("clipboard.jl")
+
+const VERSIONINFO_FACES = [
+    :versioninfo_header => Face(weight=:bold),
+    :versioninfo_version => Face(weight=:bold, inherit=:repl_prompt_julia),
+    :versioninfo_key => Face(inherit=:emphasis),
+    :versioninfo_note => Face(inherit=:shadow),
+    :versioninfo_warning => Face(inherit=:warning),
+]
+
+__init__() = foreach(addface!, VERSIONINFO_FACES)
 
 """
     varinfo(m::Module=Main, pattern::Regex=r""; all=false, imported=false, recursive=false, sortby::Symbol=:name, minsize::Int=0)
@@ -101,29 +112,31 @@ controlled with boolean keyword arguments:
 See also: [`VERSION`](@ref).
 """
 function versioninfo(io::IO=stdout; verbose::Bool=false)
-    println(io, "Julia Version $VERSION")
-    println(io, "Build Info:")
+    header(title) = println(io, styled"{versioninfo_header:$title}")
+    field(key, vals...) = println(io, "  ", styled"{versioninfo_key:$key:}", " ", vals...)
+
+    println(io, styled"Julia Version {versioninfo_version:$VERSION}")
+    header("Build Info:")
     if Base.isdebugbuild()
-        println(io, "  DEBUG build")
+        println(io, styled"  {versioninfo_warning:DEBUG build}")
     end
     if !isempty(Base.TAGGED_RELEASE_BANNER)
-        println(io, "  ", Base.TAGGED_RELEASE_BANNER)
+        println(io, styled"  {versioninfo_note:$(Base.TAGGED_RELEASE_BANNER)}")
     end
     if !isempty(Base.GIT_VERSION_INFO.commit_short_raw)
-        println(io, "  Commit $(Base.GIT_VERSION_INFO.commit_short) ($(Base.GIT_VERSION_INFO.date_string))")
+        println(io, styled"  {versioninfo_key:Commit} $(Base.GIT_VERSION_INFO.commit_short) {versioninfo_note:($(Base.GIT_VERSION_INFO.date_string))}")
     end
-    println(io, "  GC: ", unsafe_string(ccall(:jl_gc_active_impl, Ptr{UInt8}, ())))
+    field("GC", unsafe_string(ccall(:jl_gc_active_impl, Ptr{UInt8}, ())))
     if verbose
-        println(io, "  Sysimage: ", Sys.sysimage_target(), " (", Sys.MACHINE, ")")
+        field("Sysimage", Sys.sysimage_target(), styled" {versioninfo_note:($(Sys.MACHINE))}")
     end
     official_release = Base.TAGGED_RELEASE_BANNER == "Official https://julialang.org release"
     if Base.GIT_VERSION_INFO.tagged_commit && !official_release
-        println(io,
-            """
-
+        println(io, styled"""
+            {versioninfo_warning:
                 Note: This is an unofficial build, please report bugs to the project
                 responsible for this build and not to the Julia project unless you can
-                reproduce the issue using official builds available at https://julialang.org
+                reproduce the issue using official builds available at https://julialang.org}
             """
         )
     end
@@ -133,9 +146,9 @@ function versioninfo(io::IO=stdout; verbose::Bool=false)
     end
     jit_cpu = first(Base.current_image_targets()).name
 
-    println(io, "Platform Info:")
-    println(io, "  OS: ", Sys.iswindows() ? "Windows" : Sys.isapple() ?
-        "macOS" : Sys.KERNEL, " (", jit_triple, ")")
+    header("Platform Info:")
+    field("OS", Sys.iswindows() ? "Windows" : Sys.isapple() ? "macOS" : Sys.KERNEL,
+          styled" {versioninfo_note:($jit_triple)}")
 
     if verbose
         lsb = ""
@@ -149,7 +162,7 @@ function versioninfo(io::IO=stdout; verbose::Bool=false)
             println(io, "      ", lsb)
         end
         if Sys.isunix()
-            println(io, "  uname: ", readchomp(`uname -mprsv`))
+            field("uname", readchomp(`uname -mprsv`))
         end
     end
 
@@ -157,30 +170,30 @@ function versioninfo(io::IO=stdout; verbose::Bool=false)
         cpuio = IOBuffer() # print cpu_summary with correct alignment
         Sys.cpu_summary(cpuio)
         for (i, _line) in enumerate(split(chomp(takestring!(cpuio)), "\n"))
-            prefix = i == 1 ? "  CPU: " : "       "
-            line = if i == 1
-                strip(x -> isspace(x) || x == ':', _line) * " (" * Sys.CPU_NAME * "):"
+            if i == 1
+                model = strip(x -> isspace(x) || x == ':', _line)
+                field("CPU", model, styled" {versioninfo_note:($(Sys.CPU_NAME))}:")
             else
-                _line
+                println(io, "       ", _line)
             end
-            println(io, prefix, line)
         end
     else
         cpu = Sys.cpu_info()
-        println(io, "  CPU: ", length(cpu), " × ", cpu[1].model, " (", Sys.CPU_NAME, ")")
+        field("CPU", length(cpu), " × ", cpu[1].model, styled" {versioninfo_note:($(Sys.CPU_NAME))}")
     end
 
     if verbose
-        println(io, "  Memory: $(Sys.total_memory()/2^30) GiB ($(Sys.free_memory()/2^20) MiB free)")
-        try println(io, "  Uptime: $(Sys.uptime()) sec"); catch; end
-        print(io, "  Load Avg: ")
+        field("Memory", Base.format_bytes(Sys.total_memory()),
+              styled" {versioninfo_note:($(Base.format_bytes(Sys.free_memory())) free)}")
+        try field("Uptime", Sys.uptime(), " sec"); catch; end
+        print(io, "  ", styled"{versioninfo_key:Load Avg:}", " ")
         Base.print_matrix(io, Sys.loadavg()')
         println(io)
     end
-    println(io, "  WORD_SIZE: ", Sys.WORD_SIZE)
-    println(io, "  LLVM: libLLVM-", Base.libllvm_version, " (", Sys.JIT, ", ", jit_cpu, ")")
-    println(io, """Threads: $(Threads.nthreads(:default)) default, $(Threads.nthreads(:interactive)) interactive, \
-      $(Threads.ngcthreads()) GC (on $(Sys.CPU_THREADS) virtual cores)""")
+    field("WORD_SIZE", Sys.WORD_SIZE)
+    field("LLVM", "libLLVM-", Base.libllvm_version, styled" {versioninfo_note:($(Sys.JIT), $jit_cpu)}")
+    println(io, styled"""{versioninfo_header:Threads:} $(Threads.nthreads(:default)) default, $(Threads.nthreads(:interactive)) interactive, \
+      $(Threads.ngcthreads()) GC {versioninfo_note:(on $(Sys.CPU_THREADS) virtual cores)}""")
 
     function is_nonverbose_env(k::String)
         return occursin(r"^JULIA_|^DYLD_|^LD_", k)
@@ -188,20 +201,17 @@ function versioninfo(io::IO=stdout; verbose::Bool=false)
     function is_verbose_env(k::String)
         return occursin(r"PATH|FLAG|^TERM$|HOME", k) && !is_nonverbose_env(k)
     end
-    env_strs = String[
-        String["  $(k) = $(v)" for (k,v) in ENV if is_nonverbose_env(uppercase(k))];
-        (verbose ?
-         String["  $(k) = $(v)" for (k,v) in ENV if is_verbose_env(uppercase(k))] :
-         String[]);
+    env_pairs = [
+        [(k, v) for (k, v) in ENV if is_nonverbose_env(uppercase(k))];
+        (verbose ? [(k, v) for (k, v) in ENV if is_verbose_env(uppercase(k))] : Tuple{String,String}[]);
     ]
-    if !isempty(env_strs)
-        println(io, "Environment:")
-        for str in env_strs
-            println(io, str)
+    if !isempty(env_pairs)
+        header("Environment:")
+        for (k, v) in env_pairs
+            println(io, styled"  {versioninfo_key:$k} = $v")
         end
     end
 end
-
 
 function type_close_enough(@nospecialize(x), @nospecialize(t))
     x == t && return true
