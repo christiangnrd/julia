@@ -138,7 +138,8 @@ end
 # These leave state behind on their worker (`precompile`: packages loaded and methods
 # added to Base, `threads`: exited adopted threads, `SparseArrays`/`SuiteSparse`: methods
 # added to Base functions like `hvcat`), which breaks later tests on the same worker, so
-# the worker is replaced once they finish
+# the worker is replaced once they finish. Order matters, since these are moved to node1
+# when workers are not available
 const recycle_worker_tests = ["precompile", "threads", "SparseArrays", "SuiteSparse"]
 
 # In a constrained memory environment, run the "distributed" test after all other tests
@@ -159,6 +160,14 @@ limited_worker_rss && move_to_node1("Distributed")
 # multiple worker processes regardless of the value of `net_on`.
 # Otherwise, we use multiple worker processes if and only if `net_on` is true.
 const use_workers = net_on || Base.get_bool_env("JULIA_TEST_USE_MULTIPLE_WORKERS", false)
+
+# Without workers, nothing can replace the process that the tests in
+# `recycle_worker_tests` leave state behind in, so run them after all other tests
+if !use_workers
+    for test_to_move in recycle_worker_tests
+        move_to_node1(test_to_move)
+    end
+end
 
 # Start the longest tests first, so that they don't end up running alone at the end while
 # the other workers sit idle. Roughly in decreasing order of their duration on CI (Linux,
