@@ -1,5 +1,6 @@
 # This file is a part of Julia. License is MIT: https://julialang.org/license
 
+include("testdepot.jl")
 include("testenv.jl")
 
 # Stdlib pkgimages for `--check-bounds=yes` are not bundled by default. Build any missing

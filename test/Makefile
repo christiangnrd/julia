@@ -6,9 +6,7 @@ VERSDIR := v$(shell cut -d. -f1-2 < $(JULIAHOME)/VERSION)
 STDLIBDIR := $(build_datarootdir)/julia/stdlib/$(VERSDIR)
 # TODO: this Makefile ignores BUILDDIR, except for computing JULIA_EXECUTABLE
 
-export JULIA_DEPOT_PATH := $(build_prefix)/share/julia
-export JULIA_LOAD_PATH := @$(PATHSEP)@stdlib
-unexport JULIA_PROJECT :=
+# the depot, load path and project are set up by `runtests.jl` itself (see `testdepot.jl`)
 unexport JULIA_BINDIR :=
 
 TESTGROUPS = unicode strings compiler Compiler JuliaSyntax JuliaLowering
@@ -43,6 +41,10 @@ install-revise-deps:
 $(addprefix revise-, $(TESTS)): revise-% :
 	@cd $(SRCDIR) && \
     $(call PRINT_JULIA, $(call spawn,$(JULIA_EXECUTABLE)) $(TEST_JULIA_OPTIONS) ./runtests.jl $(TEST_SCRIPT_OPTIONS) --revise $*)
+
+# relocates the caches that its first run writes to the bundled depot
+relocatedepot revise-relocatedepot: export JULIA_DEPOT_PATH := $(build_prefix)/share/julia
+relocatedepot revise-relocatedepot: export JULIA_TEST_KEEP_DEPOT_PATH := 1
 
 .PHONY: relocatedepot
 relocatedepot:

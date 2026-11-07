@@ -714,16 +714,12 @@ function runtests(tests = ["all"]; ncores::Int = ceil(Int, Sys.EFFECTIVE_CPU_THR
     exit_on_error && push!(tests, "--exit-on-error")
     revise && push!(tests, "--revise")
     seed !== nothing && push!(tests, "--seed=0x$(string(seed % UInt128, base=16))") # cast to UInt128 to avoid a minus sign
+    # the depot, load path and project are set up by `runtests.jl` itself (see `testdepot.jl`)
     ENV2 = copy(ENV)
     ENV2["JULIA_CPU_THREADS"] = "$ncores"
-    pathsep = Sys.iswindows() ? ";" : ":"
-    ENV2["JULIA_DEPOT_PATH"] = string(mktempdir(; cleanup = true), pathsep) # make sure the default depots can be loaded
-    ENV2["JULIA_LOAD_PATH"] = string("@", pathsep, "@stdlib")
-    ENV2["JULIA_TESTS"] = "true"
-    delete!(ENV2, "JULIA_PROJECT")
     project_flag = propagate_project ? `--project` : ``
     try
-        run(setenv(`$(julia_cmd()) -q $julia_args $project_flag $(joinpath(Sys.BINDIR,
+        run(setenv(`$(julia_cmd()) -q --startup-file=no $julia_args $project_flag $(joinpath(Sys.BINDIR,
             Base.DATAROOTDIR, "julia", "test", "runtests.jl")) $tests`, ENV2))
         nothing
     catch
