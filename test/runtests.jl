@@ -195,6 +195,14 @@ if "ambiguous" in tests
     pushfirst!(tests, "ambiguous")
 end
 
+# Start a worker that is ready to run tests
+function add_test_worker(; kwargs...)
+    wrkr = addprocs_with_testenv(1; kwargs...)[1]
+    remotecall_fetch(include, wrkr, "testdefs.jl")
+    use_revise && Distributed.remotecall_eval(Main, wrkr, revise_init_expr)
+    return wrkr
+end
+
 import LinearAlgebra
 cd(@__DIR__) do
     n = 1
@@ -468,11 +476,7 @@ cd(@__DIR__) do
                         # still runs on a worker of its own, so later tests do not see it
                         own_worker = wrkr == 1 && use_workers && test in recycle_worker_tests
                         if own_worker
-                            wrkr = addprocs_with_testenv(1)[1]
-                            remotecall_fetch(include, wrkr, "testdefs.jl")
-                            if use_revise
-                                Distributed.remotecall_eval(Main, wrkr, revise_init_expr)
-                            end
+                            wrkr = add_test_worker()
                         end
                         running_on[test] = wrkr
                         @lock worker_prefixes_lock (worker_prefixes[wrkr] = output_prefix(test, wrkr))
@@ -529,11 +533,7 @@ cd(@__DIR__) do
                                 # the worker encountered some failure, recycle it
                                 # so future tests get a fresh environment
                                 rmprocs_with_testenv(wrkr, waitfor=rmwait_timeout)
-                                p = addprocs_with_testenv(1; pool_size=n)[1]
-                                remotecall_fetch(include, p, "testdefs.jl")
-                                if use_revise
-                                    Distributed.remotecall_eval(Main, p, revise_init_expr)
-                                end
+                                p = add_test_worker(pool_size=n)
                             end
                         else
                             print_testworker_stats(test, wrkr, resp)
@@ -543,11 +543,7 @@ cd(@__DIR__) do
                                 # with a smaller working set and a fresh environment
                                 if n > 1
                                     rmprocs_with_testenv(wrkr, waitfor=rmwait_timeout)
-                                    p = addprocs_with_testenv(1; pool_size=n)[1]
-                                    remotecall_fetch(include, p, "testdefs.jl")
-                                    if use_revise
-                                        Distributed.remotecall_eval(Main, p, revise_init_expr)
-                                    end
+                                    p = add_test_worker(pool_size=n)
                                 elseif resp[end] > max_worker_rss # single process testing
                                     error("Halting tests. Memory limit reached : $resp > $max_worker_rss")
                                 end
