@@ -1,4 +1,4 @@
-PKG_BRANCH = master
-PKG_SHA1 = 509933762bd5efaa37b0d08125b7fcbb86b3d8e5
-PKG_GIT_URL := https://github.com/JuliaLang/Pkg.jl.git
-PKG_TAR_URL = https://api.github.com/repos/JuliaLang/Pkg.jl/tarball/$1
+PKG_BRANCH = test-isolate-depot-path
+PKG_SHA1 = 220a3d8a4067eace9cd5ebc2e228ee36e9f6b97e
+PKG_GIT_URL := https://github.com/christiangnrd/Pkg.jl.git
+PKG_TAR_URL = https://api.github.com/repos/christiangnrd/Pkg.jl/tarball/$1
