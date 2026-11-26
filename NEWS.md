@@ -134,6 +134,9 @@ External dependencies
 Tooling Improvements
 --------------------
 
+* In terminals that take OSC 7501 program status reports, such as Rex, the progress of
+  precompilation is reported, also while it continues in the background.
+
 Deprecated or removed
 ---------------------
 

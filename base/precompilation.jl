@@ -357,6 +357,37 @@ const ansi_disablecursor = "\e[?25l"
 const ansi_clearline = "\e[2K"
 const ansi_beginsync = "\e[?2026h"
 const ansi_endsync = "\e[?2026l"
+
+# Terminals that take OSC 7501 program status reports are told how far along precompilation
+# is: https://www.superlogical.com/rex/docs/build/program-status
+# The reports carry an id, so that they leave the report of the program that precompiles,
+# such as the REPL, as it is.
+function progress_report(completed::Int, total::Int, running::Int)
+    percent = total > 0 ? clamp(100 * completed ÷ total, 0, 100) : 0
+    # free text is encoded, as it could not contain the separators otherwise
+    title = base64("Precompiling")
+    msg = base64("$running precompiling; $completed/$total completed")
+    return "\e]7501;state=working:progress=$percent:title=$title:msg=$msg:id=precompile:app=julia\e\\"
+end
+const progress_clear = "\e]7501;state=clear:id=precompile\e\\"
+
+# The Base64 standard library is not available here.
+function base64(str::String)
+    alphabet = codeunits("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+    bytes = codeunits(str)
+    encoded = UInt8[]
+    for i in 1:3:length(bytes)
+        n = min(length(bytes) - i + 1, 3) # bytes in this group, encoded as n + 1 characters
+        group = UInt32(bytes[i]) << 16
+        n >= 2 && (group |= UInt32(bytes[i + 1]) << 8)
+        n == 3 && (group |= bytes[i + 2])
+        for j in 0:n
+            push!(encoded, alphabet[(group >> (18 - 6j)) & 0x3f + 1])
+        end
+        append!(encoded, fill(UInt8('='), 3 - n))
+    end
+    return String(encoded)
+end
 ansi_moveup(n::Int) = string("\e[", n, "A")
 
 struct PkgPrecompileError <: Exception
@@ -2442,6 +2473,8 @@ end
 function spawn_print_loop!(s::PrecompileSession)
     Threads.@spawn :samepool begin
         cursor_disabled = false
+        report_progress = Base.supports_program_status(s.logio)
+        reported_progress = "" # nothing was reported yet
         t = nothing
         try
             wait(s.first_started)
@@ -2560,6 +2593,15 @@ function spawn_print_loop!(s::PrecompileSession)
                         print(iostr, ansi_cleartoend)
                     end
                     n_print_rows = count("\n", str_)
+                    # this goes on while the run is in the background, where nothing is drawn
+                    if report_progress
+                        running = count(job -> is_started(job) && has_pid(job), values(s.jobs))
+                        progress = progress_report(bar.current, bar.max, running)
+                        if progress != reported_progress
+                            print(s.logio, progress)
+                            reported_progress = progress
+                        end
+                    end
                     s.printloop_should_exit = s.interrupted_or_done && final_loop
                     final_loop = s.interrupted_or_done
                     i += 1
@@ -2584,6 +2626,7 @@ function spawn_print_loop!(s::PrecompileSession)
         finally
             t === nothing || close(t)
             cursor_disabled && print(s.logio, ansi_enablecursor)
+            isempty(reported_progress) || print(s.logio, progress_clear)
         end
     end
 end

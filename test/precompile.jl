@@ -5517,6 +5517,75 @@ if !Sys.iswindows() # child-on-fake-pty tests are skipped on Windows (see misc.j
     end
 end
 
+# A terminal that takes OSC 7501 program status reports is told how far along precompilation
+# is, and to drop that report at the end. Other terminals, and streams that are not a
+# terminal, are sent nothing.
+if !Sys.iswindows() # child-on-fake-pty tests are skipped on Windows (see misc.jl)
+    @testset "precompile progress is reported to the terminal" begin
+        isdefined(Main, :FakePTYs) || @eval Main include("testhelpers/FakePTYs.jl")
+        withenv("TERM_PROGRAM" => "rex") do
+            @test !Base.supports_program_status(IOContext(IOBuffer(), :color => true))
+        end
+        for (str, encoded) in ("" => "", "f" => "Zg==", "fo" => "Zm8=", "foo" => "Zm9v",
+                               "foob" => "Zm9vYg==", "fooba" => "Zm9vYmE=", "foobar" => "Zm9vYmFy")
+            @test Base.Precompilation.base64(str) == encoded
+        end
+        let encode = Base.Precompilation.base64
+            @test Base.Precompilation.progress_report(1, 3, 2) ==
+                "\e]7501;state=working:progress=33:title=$(encode("Precompiling"))" *
+                ":msg=$(encode("2 precompiling; 1/3 completed")):id=precompile:app=julia\e\\"
+        end
+        for term_program in ("rex", "")
+            mkdepottempdir() do depot
+                pkg_path = joinpath(depot, "dev", "StatusTTY")
+                mkpath(joinpath(pkg_path, "src"))
+                write(joinpath(pkg_path, "src", "StatusTTY.jl"), "module StatusTTY end\n")
+                write(joinpath(pkg_path, "Project.toml"),
+                    """
+                    name = "StatusTTY"
+                    uuid = "57a705e0-0000-0000-0000-000000000001"
+                    version = "0.1.0"
+                    """)
+                write(joinpath(pkg_path, "Manifest.toml"),
+                    """
+                    julia_version = "$(VERSION.major).$(VERSION.minor).0"
+                    manifest_format = "2.0"
+
+                    [[deps.StatusTTY]]
+                    path = "."
+                    uuid = "57a705e0-0000-0000-0000-000000000001"
+                    version = "0.1.0"
+                    """)
+                # `fancyprint` is passed because it is off by default where `CI` is set
+                cmd = addenv(`$(Base.julia_cmd()) --startup-file=no --project=$pkg_path -e 'Base.Precompilation.precompilepkgs(["StatusTTY"]; fancyprint=true)'`,
+                             "JULIA_DEPOT_PATH" => depot, "TERM_PROGRAM" => term_program)
+                pts, ptm = Main.FakePTYs.open_fake_pty()
+                p = run(cmd, devnull, pts, pts; wait=false)
+                Base.close_stdio(pts)
+                output = IOBuffer()
+                try
+                    while !eof(ptm)
+                        write(output, readavailable(ptm))
+                    end
+                catch # EIO once the child has closed its end of the pty
+                end
+                wait(p)
+                close(ptm)
+                out = String(take!(output))
+                @test success(p)
+                @test occursin("StatusTTY", out)
+                if term_program == "rex"
+                    # the package may or may not be underway at the time of the first report
+                    @test any(running -> occursin(Base.Precompilation.progress_report(0, 1, running), out), 0:1)
+                    @test startswith(last(split(out, "\e]7501;")), "state=clear:id=precompile\e\\")
+                else
+                    @test !occursin("\e]7501;", out)
+                end
+            end
+        end
+    end
+end
+
 # A package loaded in this session whose cache file has since been evicted (#63187):
 # a dependent or extension precompiled afterwards cannot be built against the loaded
 # build id, so it must be loaded from source in this session rather than fail.
