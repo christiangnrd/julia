@@ -56,6 +56,8 @@ New library functions
   of `x`, excluding the padding that `sizeof` includes. It throws for any other type or value ([#61359]).
 * `filterfirst(f, itr)` returns the first element of `itr` for which `f` returns `true` ([#60913]).
 * `growat!(a::Vector, i, delta)` grows `a` by `delta` uninitialized elements inserted at index `i` ([#63573]).
+* `Base.supports_program_status(io)` returns whether `io` is a terminal that takes OSC 7501 program
+  status reports, such as those that the REPL and precompilation send in the Rex terminal.
 
 New library features
 --------------------

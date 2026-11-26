@@ -1037,6 +1037,23 @@ end
     end
 end
 
+@testset "program status support" begin
+    @test Base.ispublic(Base, :supports_program_status)
+    withenv("TERM_PROGRAM" => "rex") do
+        @test Base.supports_program_status()
+        # only a terminal can take the reports
+        @test !Base.supports_program_status(IOBuffer())
+        @test !Base.supports_program_status(IOContext(IOBuffer(), :color => true))
+        @test !Base.supports_program_status(devnull)
+    end
+    for term_program in ("", "vscode", nothing)
+        withenv("TERM_PROGRAM" => term_program) do
+            @test !Base.supports_program_status()
+            @test !Base.supports_program_status(stdout)
+        end
+    end
+end
+
 # a package adding a broad `convert` method must not invalidate reading the terminfo
 let script = """
         Base.get_have_truecolor()

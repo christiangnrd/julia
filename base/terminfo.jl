@@ -410,6 +410,29 @@ function get_have_truecolor()
     return have_truecolor::Bool
 end
 
+"""
+    Base.supports_program_status(io::IO)::Bool
+    Base.supports_program_status()::Bool
+
+Return whether `io` is a terminal that takes program status reports: the
+[OSC 7501](https://www.superlogical.com/rex/docs/build/program-status) sequences with which a
+program tells the terminal that it is working and how far along it is, that it is waiting for
+the user, or that it finished with a success or an error. This is what to check before
+writing such a report to `io`.
+
+Without `io`, return whether the terminal that the process runs in takes these reports,
+whichever stream leads to it.
+
+The answer reflects what is known about the terminal, which currently comes from the
+`TERM_PROGRAM` environment variable, where only Rex is recognized. It is not cached, and may
+be `false` for a terminal that does take the reports.
+
+!!! compat "Julia 1.15"
+    This function requires at least Julia 1.15.
+"""
+supports_program_status(io::IO) = unwrapcontext(io)[1] isa TTY && supports_program_status()
+supports_program_status() = get(ENV, "TERM_PROGRAM", "") == "rex"
+
 in(key_value::Pair{Symbol,Bool}, ::TTY) = key_value.first === :color && key_value.second === get_have_color()
 haskey(::TTY, key::Symbol) = key === :color
 getindex(::TTY, key::Symbol) = key === :color ? get_have_color() : throw(KeyError(key))

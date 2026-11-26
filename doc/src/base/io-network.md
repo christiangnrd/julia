@@ -85,6 +85,7 @@ Base.eachline
 Base.copyline
 Base.copyuntil
 Base.displaysize
+Base.supports_program_status
 ```
 
 ## [Multimedia I/O](@id Multimedia-I/O)

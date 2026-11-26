@@ -159,6 +159,7 @@ public
     link_pipe!,
     dup,
     showarg,
+    supports_program_status,
 
 # filesystem operations
     rename,
