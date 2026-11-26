@@ -399,6 +399,8 @@ semantic_prompt_markers(p::Prompt) =
     isdefined(p, :repl) && p.repl !== nothing ? REPL.semantic_prompt_markers(p.repl) : nothing
 program_status_markers(p::Prompt) =
     isdefined(p, :repl) && p.repl !== nothing ? REPL.program_status_markers(p.repl) : nothing
+prompt_program_status(p::Prompt) =
+    isdefined(p, :repl) && p.repl !== nothing ? REPL.prompt_program_status(p.repl) : nothing
 
 function setmark(s::MIState, guess_region_active::Bool=true)
     refresh = set_action!(s, :setmark)
@@ -2010,6 +2012,9 @@ function write_prompt(terminal::AbstractTerminal, p::Prompt, color::Bool)
     # the redrawn prompt bracketed and matches established shell integrations.
     if markers !== nothing
         write(terminal, markers.prompt_start)
+        # terminals drop the report of a program that is at work when a prompt starts
+        status = prompt_program_status(p)
+        status === nothing || write(terminal, status)
     end
     prefix = prompt_string(p.prompt_prefix)
     suffix = prompt_string(p.prompt_suffix)

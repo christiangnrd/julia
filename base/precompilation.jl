@@ -1578,6 +1578,17 @@ function is_precompiling_in_background()
     @lock BG (BG.task !== nothing && !istaskdone(BG.task))
 end
 
+# Wait until the precompilation that goes on in the background, if any, is over.
+function wait_background_precompile()
+    is_precompiling_in_background() || return
+    @lock BG.task_done begin
+        while BG.completed_at === nothing
+            wait(BG.task_done)
+        end
+    end
+    return
+end
+
 # Check if `pkg` is currently being precompiled by a background task.
 # This should be called while holding require_lock to avoid races.
 # Returns true if the package is pending.

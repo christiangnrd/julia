@@ -218,6 +218,65 @@ withenv("TERM_PROGRAM" => "rex") do
         Base.wait(repltask)
     end
 end
+# While precompilation goes on in the background, the REPL at its prompt says that it is at
+# work, and says how the last evaluation ended once that is over.
+withenv("TERM_PROGRAM" => "rex") do
+    fake_repl(semantic_prompts=true) do stdin_write, stdout_read, repl
+        markers = REPL.OSC_133_MARKERS
+        status = REPL.OSC_7501_MARKERS
+        repl.specialdisplay = REPL.REPLDisplay(repl)
+        repl.history_file = false
+        repltask = @async REPL.run_repl(repl)
+        readuntil(stdout_read, markers.prompt_end)
+
+        # stand in for a precompilation that was put in the background
+        BG = Base.Precompilation.BG
+        over = Channel{Nothing}(1)
+        completed_at = BG.completed_at
+        @lock BG begin
+            BG.completed_at = nothing
+            BG.task = @async take!(over)
+        end
+        try
+            @test Base.Precompilation.is_precompiling_in_background()
+            write(stdin_write, "1 + 1\n")
+            response = readuntil(stdout_read, markers.command_finish_ok * status.background, keep=true)
+            @test occursin(status.working, response)
+            @test !occursin(status.done, response)
+            # a prompt ends the reports of work for the terminal, so this one is repeated
+            response = readuntil(stdout_read, markers.prompt_end, keep=true)
+            @test occursin(markers.prompt_start * status.background, response)
+
+            # what is evaluated next is what gets reported in the end
+            write(stdin_write, "error(\"held back\")\n")
+            response = readuntil(stdout_read, markers.command_finish_error * status.background, keep=true)
+            @test !occursin(status.error, response)
+            readuntil(stdout_read, markers.prompt_end)
+        finally
+            put!(over, nothing)
+            @lock BG begin
+                BG.task = nothing
+                BG.completed_at = time()
+                @lock BG.task_done notify(BG.task_done)
+            end
+        end
+        response = readuntil(stdout_read, status.error, keep=true)
+        @test !occursin(status.done, response)
+        @lock BG BG.completed_at = completed_at
+
+        # nothing is held back once it is over
+        write(stdin_write, "1 + 1\n")
+        response = readuntil(stdout_read, status.done, keep=true)
+        @test endswith(response, markers.command_finish_ok * status.done)
+        @test !occursin(status.background, response)
+        response = readuntil(stdout_read, markers.prompt_end, keep=true)
+        @test !occursin(status.background, response)
+
+        write(stdin_write, '\x04')
+        readuntil(stdout_read, status.clear)
+        Base.wait(repltask)
+    end
+end
 let status = REPL.OSC_7501_MARKERS,
         interrupted = LoadError("a.jl", 1, LoadError("b.jl", 1, InterruptException()))
     @test REPL.is_interrupt(interrupted)

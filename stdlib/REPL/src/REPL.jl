@@ -101,11 +101,13 @@ default_semantic_prompt_markers() =
     get(ENV, "TERM_PROGRAM", "") == "vscode" ? OSC_633_MARKERS : OSC_133_MARKERS
 
 # OSC 7501 reports what the program is doing, independently of the OSC 133/633 markers:
-# idle: waiting for input; working: evaluating; done/error: evaluation succeeded/failed;
+# idle: waiting for input; working: evaluating; background: waiting for input while
+# precompilation goes on in the background; done/error: evaluation succeeded/failed;
 # clear: remove the report.
 struct ProgramStatusMarkers
     idle::String
     working::String
+    background::String
     done::String
     error::String
     clear::String
@@ -118,12 +120,15 @@ end
 const OSC_7501_MARKERS = ProgramStatusMarkers(
     "\e]7501;state=idle:app=julia\e\\",
     "\e]7501;state=working:app=julia\e\\",
+    # the message, which has to be encoded, is "Precompiling in the background"
+    "\e]7501;state=working:app=julia:msg=UHJlY29tcGlsaW5nIGluIHRoZSBiYWNrZ3JvdW5k\e\\",
     "\e]7501;state=done:app=julia\e\\",
     "\e]7501;state=error:app=julia\e\\",
     "\e]7501;state=clear\e\\",
 )
 
 program_status_markers(::AbstractREPL) = nothing
+prompt_program_status(::AbstractREPL) = nothing
 
 function is_interrupt(@nospecialize err)
     while err isa LoadError
@@ -931,6 +936,7 @@ mutable struct LineEditREPL <: AbstractREPL
     last_shown_line_infos::Vector{Tuple{String,Int}}
     semantic_prompt_markers::SemanticPromptMarkers
     program_status_markers::Union{Nothing,ProgramStatusMarkers}
+    held_program_status::Union{Nothing,String} # see `write_prompt_status`
     interface::ModalInterface
     backendref::REPLBackendRef
     frontend_task::Task
@@ -944,7 +950,7 @@ mutable struct LineEditREPL <: AbstractREPL
         end
         r = new(t,hascolor,prompt_color,input_color,answer_color,shell_color,help_color,pkg_color,history_file,in_shell,
             in_help,envcolors,false,nothing, opts, nothing, Tuple{String,Int}[], default_semantic_prompt_markers(),
-            OSC_7501_MARKERS)
+            OSC_7501_MARKERS, nothing)
         r.prompt_ready_event = nothing
         r
     end
@@ -1310,6 +1316,42 @@ function call_on_backend(f, backend::Nothing)
 end
 
 
+# The report to repeat with every prompt: that the REPL is at work, while it holds back how
+# it got to its prompt. See `write_prompt_status`.
+function prompt_program_status(repl::LineEditREPL)
+    repl.held_program_status === nothing && return nothing
+    markers = program_status_markers(repl)
+    return markers === nothing ? nothing : markers.background
+end
+
+# Report `status`, which is how the REPL got back to its prompt. While precompilation goes on
+# in the background, the REPL is not done with its work, and a terminal may show no more than
+# the latest report of a program. So the REPL says that it is at work until that is over, and
+# holds `status` back until then, unless something else is evaluated in the meantime.
+# Terminals take a prompt for the end of the work that was reported, so that report is
+# repeated with every prompt.
+function write_prompt_status(repl::LineEditREPL, markers::ProgramStatusMarkers, status::String)
+    if !Base.Precompilation.is_precompiling_in_background()
+        write(terminal(repl), status)
+        return
+    end
+    repl.held_program_status = status
+    write(terminal(repl), markers.background)
+    # this task stays on the thread of the current one, so they do not run at the same time
+    @async begin
+        Base.Precompilation.wait_background_precompile()
+        held = repl.held_program_status
+        if held !== nothing
+            repl.held_program_status = nothing
+            try
+                write(terminal(repl), held)
+            catch # the terminal went away
+            end
+        end
+    end
+    return
+end
+
 function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon::Bool = true)
     return function do_respond(s::MIState, buf, ok::Bool)
         current_mode = LineEdit.mode(s)
@@ -1320,6 +1362,7 @@ function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon:
                 write(terminal(repl), markers.command_finish)
             end
             if status !== nothing
+                repl.held_program_status = nothing
                 write(terminal(repl), status.clear)
             end
             return transition(s, :abort)
@@ -1331,6 +1374,7 @@ function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon:
                 write(terminal(repl), markers.command_start)
             end
             if status !== nothing
+                repl.held_program_status = nothing
                 write(terminal(repl), status.working)
             end
             local response
@@ -1355,7 +1399,7 @@ function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon:
                     write(terminal(repl), marker)
                 end
                 if status !== nothing
-                    write(terminal(repl), response_status(status, response))
+                    write_prompt_status(repl, status, response_status(status, response))
                 end
             end
         else
@@ -1363,7 +1407,7 @@ function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon:
                 write(terminal(repl), markers.command_finish)
             end
             if status !== nothing
-                write(terminal(repl), status.idle)
+                write_prompt_status(repl, status, status.idle)
             end
         end
         prepare_next(repl)
