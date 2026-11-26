@@ -259,11 +259,13 @@ can identify prompts, input, and output, enabling features such as navigating be
 selecting a command's output. Unsupported terminals ignore the markers.
 In the VS Code integrated terminal, the REPL also reports the exact command line so that commands
 can be copied together with their output.
+In Rex, the REPL also reports whether it is idle, evaluating, or finished with a success or an error,
+using OSC 7501 program status sequences.
 
 Output from background tasks while the REPL is waiting for input is not bracketed by command
 markers, so terminals may associate it with the prompt rather than the command that started the task.
 
-Semantic prompt markers can be disabled in `startup.jl`:
+Semantic prompt markers and program status reports can be disabled in `startup.jl`:
 
 ```julia
 atreplinit() do repl

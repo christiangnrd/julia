@@ -136,6 +136,67 @@ withenv("TERM_PROGRAM" => "") do
     end
 end
 
+# Program status is reported alongside the OSC 133 markers, and only in terminals that support it.
+for term_program in ("", "vscode", nothing)
+    withenv("TERM_PROGRAM" => term_program) do
+        @test REPL.default_program_status_markers() === nothing
+    end
+end
+withenv("TERM_PROGRAM" => "rex") do
+    fake_repl(semantic_prompts=true) do stdin_write, stdout_read, repl
+        markers = REPL.OSC_133_MARKERS
+        status = REPL.OSC_7501_MARKERS
+        repl.specialdisplay = REPL.REPLDisplay(repl)
+        repl.history_file = false
+        repltask = @async REPL.run_repl(repl)
+        readuntil(stdout_read, markers.prompt_end)
+
+        write(stdin_write, "\"status output\"\n")
+        response = readuntil(stdout_read, status.done, keep=true)
+        @test occursin(markers.command_start * status.working * "\"status output\"", response)
+        @test endswith(response, markers.command_finish_ok * status.done)
+        readuntil(stdout_read, markers.prompt_end)
+
+        write(stdin_write, "error(\"status failure\")\n")
+        response = readuntil(stdout_read, status.error, keep=true)
+        @test occursin(status.working, response)
+        @test endswith(response, markers.command_finish_error * status.error)
+        readuntil(stdout_read, markers.prompt_end)
+
+        for interrupt in ("InterruptException()", "Base.CancellationRequest(0x1)")
+            write(stdin_write, "throw($interrupt)\n")
+            response = readuntil(stdout_read, status.idle, keep=true)
+            @test endswith(response, markers.command_finish_error * status.idle)
+            @test !occursin(status.error, response)
+            readuntil(stdout_read, markers.prompt_end)
+        end
+
+        write(stdin_write, '\n')
+        response = readuntil(stdout_read, status.idle, keep=true)
+        @test endswith(response, markers.command_finish * status.idle)
+        @test !occursin(status.working, response)
+        readuntil(stdout_read, markers.prompt_end)
+
+        # Disabling semantic prompts also disables program status.
+        repl.options.semantic_prompts = false
+        write(stdin_write, "1 + 1\n")
+        response = readuntil(stdout_read, "julia> ", keep=true)
+        @test !occursin("\e]7501;", response)
+        repl.options.semantic_prompts = true
+
+        write(stdin_write, '\x04')
+        response = readuntil(stdout_read, status.clear, keep=true)
+        @test endswith(response, markers.command_finish * status.clear)
+        Base.wait(repltask)
+    end
+end
+let status = REPL.OSC_7501_MARKERS,
+        interrupted = LoadError("a.jl", 1, LoadError("b.jl", 1, InterruptException()))
+    @test REPL.is_interrupt(interrupted)
+    @test !REPL.is_interrupt(LoadError("a.jl", 1, ErrorException("")))
+    @test REPL.response_status(status, Pair{Any, Bool}(InterruptException(), false)) == status.done
+end
+
 withenv("TERM_PROGRAM" => "vscode") do
     fake_repl(semantic_prompts=true) do stdin_write, stdout_read, repl
         markers = REPL.OSC_633_MARKERS

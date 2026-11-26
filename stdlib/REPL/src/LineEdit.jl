@@ -352,6 +352,8 @@ options(s::PromptState) =
 
 semantic_prompt_markers(p::Prompt) =
     isdefined(p, :repl) && p.repl !== nothing ? REPL.semantic_prompt_markers(p.repl) : nothing
+program_status_markers(p::Prompt) =
+    isdefined(p, :repl) && p.repl !== nothing ? REPL.program_status_markers(p.repl) : nothing
 
 function setmark(s::MIState, guess_region_active::Bool=true)
     refresh = set_action!(s, :setmark)
@@ -3327,6 +3329,10 @@ function run_interface(terminal::TextTerminal, m::ModalInterface, s::MIState=ini
                 markers = current_mode isa Prompt ? semantic_prompt_markers(current_mode) : nothing
                 if markers !== nothing
                     write(terminal(s), markers.command_finish)
+                end
+                status = current_mode isa Prompt ? program_status_markers(current_mode) : nothing
+                if status !== nothing
+                    write(terminal(s), status.idle)
                 end
                 transition(s, :reset)
                 refresh_line(s)

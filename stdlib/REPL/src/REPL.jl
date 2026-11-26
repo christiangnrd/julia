@@ -100,6 +100,47 @@ semantic_prompt_markers(::AbstractREPL) = nothing
 default_semantic_prompt_markers() =
     get(ENV, "TERM_PROGRAM", "") == "vscode" ? OSC_633_MARKERS : OSC_133_MARKERS
 
+# OSC 7501 reports what the program is doing, independently of the OSC 133/633 markers:
+# idle: waiting for input; working: evaluating; done/error: evaluation succeeded/failed;
+# clear: remove the report.
+struct ProgramStatusMarkers
+    idle::String
+    working::String
+    done::String
+    error::String
+    clear::String
+end
+
+# Program status protocol:
+# https://www.superlogical.com/rex/docs/build/program-status
+# The reports carry no id, so they address the root record of the terminal, and clear also
+# removes the records that other programs reported beneath it.
+const OSC_7501_MARKERS = ProgramStatusMarkers(
+    "\e]7501;state=idle:app=julia\e\\",
+    "\e]7501;state=working:app=julia\e\\",
+    "\e]7501;state=done:app=julia\e\\",
+    "\e]7501;state=error:app=julia\e\\",
+    "\e]7501;state=clear\e\\",
+)
+
+program_status_markers(::AbstractREPL) = nothing
+default_program_status_markers() =
+    Base.supports_program_status() ? OSC_7501_MARKERS : nothing
+
+function is_interrupt(@nospecialize err)
+    while err isa LoadError
+        err = err.error
+    end
+    return err isa InterruptException || err isa Base.CancellationRequest
+end
+
+function response_status(markers::ProgramStatusMarkers, @nospecialize response)
+    val, iserr = response
+    iserr || return markers.done
+    interrupted = val isa Base.ExceptionStack && !isempty(val) && is_interrupt(last(val).exception)
+    return interrupted ? markers.idle : markers.error
+end
+
 function serialize_vscode_osc_message(message::AbstractString)
     io = IOBuffer()
     for byte in codeunits(message)
@@ -891,6 +932,7 @@ mutable struct LineEditREPL <: AbstractREPL
     mistate::Union{MIState,Nothing}
     last_shown_line_infos::Vector{Tuple{String,Int}}
     semantic_prompt_markers::SemanticPromptMarkers
+    program_status_markers::Union{Nothing,ProgramStatusMarkers}
     interface::ModalInterface
     backendref::REPLBackendRef
     frontend_task::Task
@@ -903,7 +945,8 @@ mutable struct LineEditREPL <: AbstractREPL
             opts.beep_colors = [""]
         end
         r = new(t,hascolor,prompt_color,input_color,answer_color,shell_color,help_color,pkg_color,history_file,in_shell,
-            in_help,envcolors,false,nothing, opts, nothing, Tuple{String,Int}[], default_semantic_prompt_markers())
+            in_help,envcolors,false,nothing, opts, nothing, Tuple{String,Int}[], default_semantic_prompt_markers(),
+            default_program_status_markers())
         r.prompt_ready_event = nothing
         r
     end
@@ -915,6 +958,8 @@ terminal(r::LineEditREPL) = r.t
 hascolor(r::LineEditREPL) = r.hascolor
 semantic_prompt_markers(r::LineEditREPL) =
     r.options.semantic_prompts ? r.semantic_prompt_markers : nothing
+program_status_markers(r::LineEditREPL) =
+    r.options.semantic_prompts ? r.program_status_markers : nothing
 
 LineEditREPL(t::TextTerminal, hascolor::Bool, envcolors::Bool=false) =
     LineEditREPL(t, hascolor,
@@ -1266,9 +1311,13 @@ function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon:
     return function do_respond(s::MIState, buf, ok::Bool)
         current_mode = LineEdit.mode(s)
         markers = current_mode isa Prompt ? LineEdit.semantic_prompt_markers(current_mode) : nothing
+        status = current_mode isa Prompt ? LineEdit.program_status_markers(current_mode) : nothing
         if !ok
             if markers !== nothing
                 write(terminal(repl), markers.command_finish)
+            end
+            if status !== nothing
+                write(terminal(repl), status.clear)
             end
             return transition(s, :abort)
         end
@@ -1277,6 +1326,9 @@ function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon:
             reset(repl)
             if markers !== nothing
                 write(terminal(repl), markers.command_start)
+            end
+            if status !== nothing
+                write(terminal(repl), status.working)
             end
             local response
             try
@@ -1299,9 +1351,17 @@ function respond(f, repl, main; pass_empty::Bool = false, suppress_on_semicolon:
                     marker = response[2] ? markers.command_finish_error : markers.command_finish_ok
                     write(terminal(repl), marker)
                 end
+                if status !== nothing
+                    write(terminal(repl), response_status(status, response))
+                end
             end
-        elseif markers !== nothing
-            write(terminal(repl), markers.command_finish)
+        else
+            if markers !== nothing
+                write(terminal(repl), markers.command_finish)
+            end
+            if status !== nothing
+                write(terminal(repl), status.idle)
+            end
         end
         prepare_next(repl)
         reset_state(s)
