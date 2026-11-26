@@ -1069,6 +1069,33 @@ end
     end
 end
 
+@testset "progress bar support" begin
+    @test !Base.ispublic(Base, :supports_progress_bar)
+    for env in (Dict("WT_SESSION" => "5d7c1f"), Dict("ConEmuANSI" => "ON"),
+                Dict("TERM_PROGRAM" => "ghostty"), Dict("TERM_PROGRAM" => "WezTerm"),
+                Dict("TERM_PROGRAM" => "herdr"),
+                Dict("TERM" => "xterm-ghostty"),
+                Dict("TERM_FEATURES" => "T3CwLrMSc7UUw9Ts3BFGsSyHNoSxFP"),
+                Dict("TERM_FEATURES" => "PT3"),
+                Dict("PTYXIS_VERSION" => "48.2"), Dict("KONSOLE_VERSION" => "260400"))
+        @test Base.supports_progress_bar(env)
+    end
+    for env in (Dict{String, String}(), Dict("ConEmuANSI" => "OFF"),
+                Dict("TERM_PROGRAM" => "Apple_Terminal"), Dict("TERM" => "xterm-256color"),
+                Dict("TERM_FEATURES" => "T3CwLrMSc7UUw9Ts3BFGsSyHNoSxF"),
+                Dict("TERM_FEATURES" => "T3Px"), # a `P` followed by lowercase letters is another feature
+                Dict("PTYXIS_VERSION" => "47.9"), Dict("KONSOLE_VERSION" => "250803"),
+                Dict("KONSOLE_VERSION" => "unknown"))
+        @test !Base.supports_progress_bar(env)
+    end
+    # only a terminal can show the progress
+    withenv("TERM_PROGRAM" => "ghostty") do
+        @test Base.supports_progress_bar()
+        @test !Base.supports_progress_bar(IOBuffer())
+        @test !Base.supports_progress_bar(IOContext(IOBuffer(), :color => true))
+    end
+end
+
 # a package adding a broad `convert` method must not invalidate reading the terminfo
 let script = """
         Base.get_have_truecolor()

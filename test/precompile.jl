@@ -5517,9 +5517,9 @@ if !Sys.iswindows() # child-on-fake-pty tests are skipped on Windows (see misc.j
     end
 end
 
-# A terminal that takes OSC 7501 program status reports is told how far along precompilation
-# is, and to drop that report at the end. Other terminals, and streams that are not a
-# terminal, are sent nothing.
+# A terminal that takes OSC 7501 program status reports, or else one that shows the progress
+# it is told with OSC 9;4, is told how far along precompilation is, and to drop that at the
+# end. Other terminals, and streams that are not a terminal, are sent nothing.
 if !Sys.iswindows() # child-on-fake-pty tests are skipped on Windows (see misc.jl)
     @testset "precompile progress is reported to the terminal" begin
         isdefined(Main, :FakePTYs) || @eval Main include("testhelpers/FakePTYs.jl")
@@ -5531,11 +5531,13 @@ if !Sys.iswindows() # child-on-fake-pty tests are skipped on Windows (see misc.j
             @test Base.Precompilation.base64(str) == encoded
         end
         let encode = Base.Precompilation.base64
-            @test Base.Precompilation.progress_report(1, 3, 2) ==
+            @test Base.Precompilation.progress_report(:osc7501, 1, 3, 2) ==
                 "\e]7501;state=working:progress=33:title=$(encode("Precompiling"))" *
                 ":msg=$(encode("2 precompiling; 1/3 completed")):id=precompile:app=julia\e\\"
         end
-        for term_program in ("rex", "")
+        @test Base.Precompilation.progress_report(:osc94, 1, 3, 2) == "\e]9;4;1;33\a"
+        @test Base.Precompilation.progress_report(:osc94, 0, 0, 0) == "\e]9;4;1;0\a"
+        for term_program in ("rex", "ghostty", "")
             mkdepottempdir() do depot
                 pkg_path = joinpath(depot, "dev", "StatusTTY")
                 mkpath(joinpath(pkg_path, "src"))
@@ -5558,7 +5560,10 @@ if !Sys.iswindows() # child-on-fake-pty tests are skipped on Windows (see misc.j
                     """)
                 # `fancyprint` is passed because it is off by default where `CI` is set
                 cmd = addenv(`$(Base.julia_cmd()) --startup-file=no --project=$pkg_path -e 'Base.Precompilation.precompilepkgs(["StatusTTY"]; fancyprint=true)'`,
-                             "JULIA_DEPOT_PATH" => depot, "TERM_PROGRAM" => term_program)
+                             "JULIA_DEPOT_PATH" => depot, "TERM_PROGRAM" => term_program,
+                             # whatever the terminal that the tests run in
+                             "TERM" => "xterm-256color", "TERM_FEATURES" => nothing, "WT_SESSION" => nothing,
+                             "ConEmuANSI" => nothing, "PTYXIS_VERSION" => nothing, "KONSOLE_VERSION" => nothing)
                 pts, ptm = Main.FakePTYs.open_fake_pty()
                 p = run(cmd, devnull, pts, pts; wait=false)
                 Base.close_stdio(pts)
@@ -5576,10 +5581,16 @@ if !Sys.iswindows() # child-on-fake-pty tests are skipped on Windows (see misc.j
                 @test occursin("StatusTTY", out)
                 if term_program == "rex"
                     # the package may or may not be underway at the time of the first report
-                    @test any(running -> occursin(Base.Precompilation.progress_report(0, 1, running), out), 0:1)
+                    @test any(running -> occursin(Base.Precompilation.progress_report(:osc7501, 0, 1, running), out), 0:1)
                     @test startswith(last(split(out, "\e]7501;")), "state=clear:id=precompile\e\\")
+                    @test !occursin("\e]9;4;", out)
+                elseif term_program == "ghostty"
+                    @test occursin("\e]9;4;1;0\a", out)
+                    @test startswith(last(split(out, "\e]9;4;")), "0\a")
+                    @test !occursin("\e]7501;", out)
                 else
                     @test !occursin("\e]7501;", out)
+                    @test !occursin("\e]9;4;", out)
                 end
             end
         end

@@ -441,6 +441,26 @@ supports_program_status() =
 # terminal sends.
 global program_status_answer::Union{Nothing, Bool} = nothing
 
+# Whether `io` is a terminal that shows the progress it is told with OSC 9;4 sequences,
+# typically as a progress bar in its tab or in the taskbar. This cannot be asked of the
+# terminal, and some of those that do not know the sequence show a notification for every
+# OSC 9 that they receive, so terminals are recognized from the environment `env`. The signs
+# follow the `anstyle-progress` crate (https://github.com/rust-cli/anstyle), without tmux.
+supports_progress_bar(io::IO) = unwrapcontext(io)[1] isa TTY && supports_progress_bar()
+function supports_progress_bar(env = ENV)
+    version(name) = something(tryparse(Int, first(eachsplit(get(env, name, ""), '.'))), 0)
+    return haskey(env, "WT_SESSION") ||            # Windows Terminal
+        get(env, "ConEmuANSI", "") == "ON" ||
+        get(env, "TERM_PROGRAM", "") in ("ghostty", "WezTerm", "herdr") ||
+        # unlike `TERM_PROGRAM`, this identifies Ghostty across SSH
+        get(env, "TERM", "") == "xterm-ghostty" ||
+        # the features that iTerm2 reports are codes made of an uppercase letter and any
+        # lowercase ones, where `P` stands for progress
+        occursin(r"P(?![a-z])", get(env, "TERM_FEATURES", "")) ||
+        version("PTYXIS_VERSION") >= 48 ||
+        version("KONSOLE_VERSION") >= 260400       # 26.04
+end
+
 in(key_value::Pair{Symbol,Bool}, ::TTY) = key_value.first === :color && key_value.second === get_have_color()
 haskey(::TTY, key::Symbol) = key === :color
 getindex(::TTY, key::Symbol) = key === :color ? get_have_color() : throw(KeyError(key))

@@ -358,18 +358,30 @@ const ansi_clearline = "\e[2K"
 const ansi_beginsync = "\e[?2026h"
 const ansi_endsync = "\e[?2026l"
 
-# Terminals that take OSC 7501 program status reports are told how far along precompilation
-# is: https://www.superlogical.com/rex/docs/build/program-status
-# The reports carry an id, so that they leave the report of the program that precompiles,
-# such as the REPL, as it is.
-function progress_report(completed::Int, total::Int, running::Int)
+# The protocol through which the terminal behind `io` is told how far along precompilation
+# is, or `nothing` if it is not known to take either of them:
+# - `:osc7501`, program status reports, which also say what is going on:
+#   https://www.superlogical.com/rex/docs/build/program-status
+#   The reports carry an id, so that they leave the report of the program that precompiles,
+#   such as the REPL, as it is.
+# - `:osc94`, the sequence that most terminals with a progress bar take, which holds no more
+#   than a percentage.
+function progress_protocol(io::IO)
+    Base.supports_program_status(io) && return :osc7501
+    Base.supports_progress_bar(io) && return :osc94
+    return nothing
+end
+
+function progress_report(protocol::Symbol, completed::Int, total::Int, running::Int)
     percent = total > 0 ? clamp(100 * completed ÷ total, 0, 100) : 0
+    protocol === :osc94 && return "\e]9;4;1;$percent\a"
     # free text is encoded, as it could not contain the separators otherwise
     title = base64("Precompiling")
     msg = base64("$running precompiling; $completed/$total completed")
     return "\e]7501;state=working:progress=$percent:title=$title:msg=$msg:id=precompile:app=julia\e\\"
 end
-const progress_clear = "\e]7501;state=clear:id=precompile\e\\"
+progress_clear(protocol::Symbol) =
+    protocol === :osc94 ? "\e]9;4;0\a" : "\e]7501;state=clear:id=precompile\e\\"
 
 # The Base64 standard library is not available here.
 function base64(str::String)
@@ -2473,8 +2485,9 @@ end
 function spawn_print_loop!(s::PrecompileSession)
     Threads.@spawn :samepool begin
         cursor_disabled = false
-        report_progress = Base.supports_program_status(s.logio)
+        protocol = progress_protocol(s.logio)
         reported_progress = "" # nothing was reported yet
+        reported_at = 0.0
         t = nothing
         try
             wait(s.first_started)
@@ -2594,12 +2607,16 @@ function spawn_print_loop!(s::PrecompileSession)
                     end
                     n_print_rows = count("\n", str_)
                     # this goes on while the run is in the background, where nothing is drawn
-                    if report_progress
+                    if protocol !== nothing
                         running = count(job -> is_started(job) && has_pid(job), values(s.jobs))
-                        progress = progress_report(bar.current, bar.max, running)
-                        if progress != reported_progress
+                        progress = progress_report(protocol, bar.current, bar.max, running)
+                        # a progress bar is removed by terminals that have not been told about
+                        # it in a while, which is about 15 seconds in Ghostty
+                        stale = protocol === :osc94 && now_time - reported_at >= 5
+                        if progress != reported_progress || stale
                             print(s.logio, progress)
                             reported_progress = progress
+                            reported_at = now_time
                         end
                     end
                     s.printloop_should_exit = s.interrupted_or_done && final_loop
@@ -2626,7 +2643,7 @@ function spawn_print_loop!(s::PrecompileSession)
         finally
             t === nothing || close(t)
             cursor_disabled && print(s.logio, ansi_enablecursor)
-            isempty(reported_progress) || print(s.logio, progress_clear)
+            isempty(reported_progress) || print(s.logio, progress_clear(protocol))
         end
     end
 end

@@ -134,8 +134,9 @@ External dependencies
 Tooling Improvements
 --------------------
 
-* In terminals that take OSC 7501 program status reports, such as Rex, the progress of
-  precompilation is reported, also while it continues in the background.
+* The progress of precompilation is reported to terminals that show it, also while it continues
+  in the background: with OSC 7501 program status sequences in Rex, and with OSC 9;4 sequences in
+  Windows Terminal, ConEmu, Ghostty, WezTerm, iTerm2, Ptyxis and Konsole.
 
 Deprecated or removed
 ---------------------
