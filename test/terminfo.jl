@@ -1052,6 +1052,21 @@ end
             @test !Base.supports_program_status(stdout)
         end
     end
+    # what the terminal answered when it was asked counts for more than the environment
+    @test Base.program_status_answer === nothing
+    try
+        Base.program_status_answer = false
+        withenv("TERM_PROGRAM" => "rex") do
+            @test !Base.supports_program_status()
+        end
+        Base.program_status_answer = true
+        withenv("TERM_PROGRAM" => "") do
+            @test Base.supports_program_status()
+            @test !Base.supports_program_status(IOBuffer())
+        end
+    finally
+        Base.program_status_answer = nothing
+    end
 end
 
 # a package adding a broad `convert` method must not invalidate reading the terminfo

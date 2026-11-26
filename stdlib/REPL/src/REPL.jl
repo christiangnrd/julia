@@ -124,8 +124,6 @@ const OSC_7501_MARKERS = ProgramStatusMarkers(
 )
 
 program_status_markers(::AbstractREPL) = nothing
-default_program_status_markers() =
-    Base.supports_program_status() ? OSC_7501_MARKERS : nothing
 
 function is_interrupt(@nospecialize err)
     while err isa LoadError
@@ -946,7 +944,7 @@ mutable struct LineEditREPL <: AbstractREPL
         end
         r = new(t,hascolor,prompt_color,input_color,answer_color,shell_color,help_color,pkg_color,history_file,in_shell,
             in_help,envcolors,false,nothing, opts, nothing, Tuple{String,Int}[], default_semantic_prompt_markers(),
-            default_program_status_markers())
+            OSC_7501_MARKERS)
         r.prompt_ready_event = nothing
         r
     end
@@ -958,8 +956,13 @@ terminal(r::LineEditREPL) = r.t
 hascolor(r::LineEditREPL) = r.hascolor
 semantic_prompt_markers(r::LineEditREPL) =
     r.options.semantic_prompts ? r.semantic_prompt_markers : nothing
-program_status_markers(r::LineEditREPL) =
-    r.options.semantic_prompts ? r.program_status_markers : nothing
+function program_status_markers(r::LineEditREPL)
+    r.options.semantic_prompts || return nothing
+    # what the terminal of this REPL answered when it was asked, and a guess until then
+    mistate = r.mistate
+    answer = mistate === nothing ? nothing : mistate.terminal_properties.program_status
+    return something(answer, Base.supports_program_status()) ? r.program_status_markers : nothing
+end
 
 LineEditREPL(t::TextTerminal, hascolor::Bool, envcolors::Bool=false) =
     LineEditREPL(t, hascolor,
@@ -1874,6 +1877,8 @@ function run_frontend(repl::LineEditREPL, backend::REPLBackendRef)
     end
     try
         LineEdit.query_colors(repl.mistate.terminal_properties, terminal(repl))
+        repl.options.semantic_prompts &&
+            LineEdit.query_program_status(repl.mistate.terminal_properties, terminal(repl))
         run_interface(terminal(repl), interface, repl.mistate)
     catch e
         # The terminal went away (e.g. its window was closed): end the session

@@ -137,11 +137,39 @@ withenv("TERM_PROGRAM" => "") do
 end
 
 # Program status is reported alongside the OSC 133 markers, and only in terminals that support it.
-for term_program in ("", "vscode", nothing)
+# The REPL asks the terminal whether it does, and goes by the environment until it has answered:
+# the answer is followed by that to a query that every terminal answers.
+for (term_program, answer, supported) in (
+        ("", "\e]7501;?:states=idle,working,done,blocked,error:kinds=permission\e\\\e[?62;22c", true),
+        ("", "\e]7501;?\a\e[?62;22c", true),
+        ("", "\e[?62;22c", false), ("", "", false),
+        ("rex", "\e[?62;22c", false), ("rex", "", true))
     withenv("TERM_PROGRAM" => term_program) do
-        @test REPL.default_program_status_markers() === nothing
+        fake_repl(semantic_prompts=true) do stdin_write, stdout_read, repl
+            markers = REPL.OSC_133_MARKERS
+            status = REPL.OSC_7501_MARKERS
+            repl.specialdisplay = REPL.REPLDisplay(repl)
+            repl.history_file = false
+            repltask = @async REPL.run_repl(repl)
+            startup = readuntil(stdout_read, markers.prompt_end, keep=true)
+            @test occursin("\e]7501;?\e\\\e[c", startup)
+
+            write(stdin_write, answer, "1 + 1\n")
+            response = readuntil(stdout_read, markers.command_finish_ok, keep=true)
+            @test occursin(status.working, response) == supported
+            response = readuntil(stdout_read, markers.prompt_end, keep=true)
+            @test startswith(response, status.done) == supported
+            @test occursin("\e]7501;", response) == supported
+            @test REPL.program_status_markers(repl) === (supported ? status : nothing)
+
+            write(stdin_write, '\x04')
+            readuntil(stdout_read, markers.command_finish)
+            Base.wait(repltask)
+        end
     end
 end
+# a terminal that is not that of the process says nothing about the latter
+@test Base.program_status_answer === nothing
 withenv("TERM_PROGRAM" => "rex") do
     fake_repl(semantic_prompts=true) do stdin_write, stdout_read, repl
         markers = REPL.OSC_133_MARKERS

@@ -38,7 +38,9 @@ mutable struct TerminalProperties
     da1::Union{Nothing, Vector{Int}}  # DA1 feature parameters
     colors::Vector{Pair{Symbol, StyledStrings.RGBTuple}}
     awaiting_colors::Bool
-    TerminalProperties() = new(nothing, Pair{Symbol, StyledStrings.RGBTuple}[], false)
+    program_status::Union{Nothing, Bool}  # whether it takes OSC 7501 reports, once it has answered
+    awaiting_program_status::Bool
+    TerminalProperties() = new(nothing, Pair{Symbol, StyledStrings.RGBTuple}[], false, nothing, false)
 end
 
 """
@@ -62,6 +64,8 @@ function receive_private_csi!(props::TerminalProperties, term::TextTerminal)
     body = String(buf)
     if final == UInt8('c')
         props.da1 = Int[n for n in tryparse.(Int, split(body, ';')) if !isnothing(n)]
+        # see `query_program_status`
+        props.awaiting_program_status && receive_program_status!(props, term, false)
     elseif final == UInt8('n') && startswith(body, "997;")
         props.awaiting_colors || query_colors(props, term)
     end
@@ -153,6 +157,14 @@ the palette is applied with `StyledStrings.setcolors!`.
 function receive_osc!(props::TerminalProperties, io::IO)
     parts = split(read_osc_response(io), ';')
     opcode = tryparse(Int, first(parts))
+    if opcode == 7501
+        # the answer to `query_program_status` is "7501;?", which may go on to list what
+        # the terminal supports
+        if props.awaiting_program_status && length(parts) >= 2 && startswith(parts[2], '?')
+            receive_program_status!(props, io, true)
+        end
+        return
+    end
     (isnothing(opcode) || !props.awaiting_colors) && return
     if opcode == 10 || opcode == 11
         if length(parts) == 2
@@ -212,6 +224,39 @@ function query_colors(props::TerminalProperties, term::TextTerminal)
     end
     print(term, "\e]10;?\e\\\e]11;?\e\\")
     flush(term)
+    nothing
+end
+
+"""
+    query_program_status(props::TerminalProperties, term::TextTerminal)
+
+Ask the terminal whether it takes OSC 7501 program status reports, which is recorded in
+`props.program_status` once it has answered.
+
+The query is followed by a DA1 (Device Attributes) one, which every terminal answers.
+Terminals answer queries in order, so one that takes the reports has said so by the time
+the DA1 response arrives, and one that has not does not take them.
+
+!!! warning
+    The responses are only collected while the REPL is reading input, which dispatches
+    `\\e]` to [`receive_osc!`](@ref) and `\\e[?` to [`receive_private_csi!`](@ref).
+"""
+function query_program_status(props::TerminalProperties, term::TextTerminal)
+    props.awaiting_program_status = true
+    raw!(term, true)  # so the tty does not echo the replies
+    print(term, "\e]7501;?\e\\\e[c")
+    flush(term)
+    nothing
+end
+
+function receive_program_status!(props::TerminalProperties, io::IO, supported::Bool)
+    props.awaiting_program_status = false
+    props.program_status = supported
+    # tell the code that reports to the same terminal from outside of the REPL, such as
+    # precompilation
+    if io isa TextTerminal && Terminals.pipe_writer(io) isa Base.TTY
+        Base.program_status_answer = supported
+    end
     nothing
 end
 

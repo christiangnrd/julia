@@ -423,15 +423,23 @@ writing such a report to `io`.
 Without `io`, return whether the terminal that the process runs in takes these reports,
 whichever stream leads to it.
 
-The answer reflects what is known about the terminal, which currently comes from the
-`TERM_PROGRAM` environment variable, where only Rex is recognized. It is not cached, and may
-be `false` for a terminal that does take the reports.
+The answer reflects what is known about the terminal. That is what the terminal answered,
+if it was asked whether it takes these reports, which the REPL does when it starts. It is
+otherwise guessed from the `TERM_PROGRAM` environment variable, where only Rex is recognized.
+The answer may thus be `false` for a terminal that does take the reports, and may change once
+the terminal has answered.
 
 !!! compat "Julia 1.15"
     This function requires at least Julia 1.15.
 """
 supports_program_status(io::IO) = unwrapcontext(io)[1] isa TTY && supports_program_status()
-supports_program_status() = get(ENV, "TERM_PROGRAM", "") == "rex"
+supports_program_status() =
+    @something program_status_answer (get(ENV, "TERM_PROGRAM", "") == "rex")
+
+# Whether the terminal that the process runs in said that it takes program status reports,
+# or `nothing` if it was not asked or did not answer. Set by the REPL, which reads what the
+# terminal sends.
+global program_status_answer::Union{Nothing, Bool} = nothing
 
 in(key_value::Pair{Symbol,Bool}, ::TTY) = key_value.first === :color && key_value.second === get_have_color()
 haskey(::TTY, key::Symbol) = key === :color

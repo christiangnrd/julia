@@ -110,8 +110,9 @@ Standard library changes
   commands without pipes or redirections through `$SHELL -c` on systems other than Windows. It no
   longer reads the `JULIA_SHELL` environment variable. The new `export NAME=value` and `unset NAME`
   commands in shell mode set and remove environment variables for later commands ([#20401]).
-* In the Rex terminal, the REPL now reports whether it is idle, evaluating, or finished with a
-  success or an error, using OSC 7501 program status sequences.
+* In terminals that take OSC 7501 program status reports, such as Rex, the REPL now reports whether
+  it is idle, evaluating, or finished with a success or an error. It asks the terminal whether it
+  takes them when it starts.
 
 #### SharedArrays
 

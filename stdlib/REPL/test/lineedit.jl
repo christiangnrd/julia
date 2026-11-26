@@ -1732,6 +1732,44 @@ end
         @test props.da1 === nothing
     end
 
+    @testset "program status query" begin
+        term = FakeTerminal(IOBuffer(), IOBuffer(), IOBuffer())
+        props = LineEdit.TerminalProperties()
+        @test props.program_status === nothing
+        LineEdit.query_program_status(props, term)
+        @test String(take!(term.out_stream)) == "\e]7501;?\e\\\e[c"
+        @test props.awaiting_program_status
+
+        # the terminal takes the reports if it says so before it answers the DA1 query
+        for response in ("7501;?\e\\", "7501;?:states=idle,working,done,blocked,error:kinds=auth\a")
+            props, _ = receive_csi("")
+            props.awaiting_program_status = true
+            LineEdit.receive_osc!(props, IOBuffer(response))
+            @test props.program_status === true
+            @test !props.awaiting_program_status
+            LineEdit.receive_private_csi!(props, FakeTerminal(IOBuffer("62;22c"), IOBuffer(), IOBuffer()))
+            @test props.program_status === true
+        end
+        props, _ = receive_csi("")
+        props.awaiting_program_status = true
+        LineEdit.receive_private_csi!(props, FakeTerminal(IOBuffer("62;22c"), IOBuffer(), IOBuffer()))
+        @test props.program_status === false
+        @test !props.awaiting_program_status
+
+        # responses that were not asked for, or that are not an answer, are ignored
+        props, _ = receive_csi("62;22c")
+        @test props.program_status === nothing
+        LineEdit.receive_osc!(props, IOBuffer("7501;?\a"))
+        @test props.program_status === nothing
+        props.awaiting_program_status = true
+        LineEdit.receive_osc!(props, IOBuffer("7501;state=idle\a"))
+        @test props.program_status === nothing
+        @test props.awaiting_program_status
+
+        # these are not the terminal of the process, about which nothing was learnt
+        @test Base.program_status_answer === nothing
+    end
+
     @testset "MIState has terminal_properties" begin
         s = new_state()
         @test s.terminal_properties isa LineEdit.TerminalProperties
