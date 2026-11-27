@@ -62,6 +62,7 @@ $(foreach dir,$(DIRS),$(eval $(call dir_target,$(dir))))
 $(foreach link,base $(JULIAHOME)/test,$(eval $(call symlink_target,$(link),$$(build_datarootdir)/julia,$(notdir $(link)))))
 
 julia_flisp.boot.inc.phony: julia-deps
+	@$(call PRINT_STATUS,$(BUILD_STATUS_RUNTIME))
 	@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT)/src julia_flisp.boot.inc.phony
 
 # Build the HTML docs (skipped if already exists, notably in tarballs)
@@ -88,6 +89,7 @@ $(foreach module, $(TOP_LEVEL_PKGS), $(eval $(call symlink_target,$$(JULIAHOME)/
 
 .PHONY: julia-deps
 julia-deps: | $(DIRS) $(build_datarootdir)/julia/base $(build_datarootdir)/julia/test
+	@$(call PRINT_STATUS,$(BUILD_STATUS_DEPS))
 	@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT)/deps
 
 ifeq (${USE_THIRD_PARTY_GC},mmtk)
@@ -131,10 +133,12 @@ julia-libllvmcalltest: julia-deps
 
 .PHONY: julia-src-release julia-src-debug
 julia-src-release julia-src-debug : julia-src-% : julia-deps julia_flisp.boot.inc.phony julia-cli-%
+	@$(call PRINT_STATUS,$(BUILD_STATUS_RUNTIME))
 	@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT)/src $*
 
 .PHONY: julia-cli-release julia-cli-debug
 julia-cli-release julia-cli-debug: julia-cli-% : julia-deps
+	@$(call PRINT_STATUS,$(BUILD_STATUS_RUNTIME))
 	@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT)/cli $*
 
 .PHONY: julia-sysimg-release julia-sysimg-debug
@@ -166,6 +170,7 @@ checkbounds-pkgimages: stdlibs-cache-checkbounds
 
 .PHONY: debug release
 debug release : % : julia-% stdlibs-cache-%
+	@$(call PRINT_STATUS,$(BUILD_STATUS_DONE))
 
 .PHONY: docs
 docs: julia-sysimg-$(JULIA_BUILD_MODE) stdlibs-cache-$(JULIA_BUILD_MODE)

@@ -44,6 +44,7 @@ pkgimage_config_changed = $(if $(filter $(JULIA_CHECK_BOUNDS_PKGIMAGES),$(shell 
 
 # The precompile workers inherit the coverage configuration through `Base.CacheFlags`.
 $(BUILDDIR)/stdlib/%.image: $(STDLIB_PROJECT_SCRIPT) $(INDEPENDENT_STDLIBS_SRCS) $(DEPOTDIR)/compiled
+	@$(call PRINT_STATUS,$(BUILD_STATUS_STDLIBS))
 	@$(call PRINT_JULIA, JULIA_CPU_TARGET="sysimage" $(call spawn,$(JULIA_EXECUTABLE)) $(JULIA_COVERAGE_IMAGE_FLAGS) --startup-file=no -e \
 		'include(ARGS[1]); Base.Precompilation.precompilepkgs(configs=[$(STDLIB_PKGIMAGE_CONFIGS)]; strict=true)' $(call cygpath_w,$(STDLIB_PROJECT_SCRIPT)) $(call cygpath_w,$(STDLIB_PROJECT_DIR)))
 	echo '$(JULIA_CHECK_BOUNDS_PKGIMAGES)' > $@

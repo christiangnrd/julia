@@ -153,6 +153,7 @@ RELDATADIR := $(call rel_path,$(JULIAHOME)/base,$(build_datarootdir))/ # <-- mak
 CPUFEATURES_TABLES := $(wildcard $(build_includedir)/cpufeatures/target_tables_*.h)
 
 $(build_private_libdir)/basecompiler.ji: $(COMPILER_SRCS) $(CPUFEATURES_TABLES)
+	@$(call PRINT_STATUS,$(BUILD_STATUS_CORE))
 	@$(call PRINT_JULIA, cd $(JULIAHOME)/base && \
 	JULIA_NUM_THREADS=1 $(call spawn,$(JULIA_EXECUTABLE)) $(HEAPLIM) --output-ji $(call cygpath_w,$@).tmp $(JULIA_COVERAGE_IMAGE_FLAGS) \
 		--startup-file=no --warn-overwrite=yes --depwarn=error -g$(BOOTSTRAP_DEBUG_LEVEL) -O1 Base_compiler.jl --buildroot $(RELBUILDROOT) --dataroot $(RELDATADIR))
@@ -160,6 +161,7 @@ $(build_private_libdir)/basecompiler.ji: $(COMPILER_SRCS) $(CPUFEATURES_TABLES)
 
 define base_builder
 $$(build_private_libdir)/basecompiler$1-o.a $$(build_private_libdir)/basecompiler$1-bc.a : $$(build_private_libdir)/basecompiler$1-%.a : $(COMPILER_SRCS) $(CPUFEATURES_TABLES)
+	@$$(call PRINT_STATUS,$$(BUILD_STATUS_CORE))
 	@$$(call PRINT_JULIA, cd $$(JULIAHOME)/base && \
 	WINEPATH="$$(call cygpath_w,$$(build_bindir));$$$$WINEPATH" \
 	JULIA_NUM_THREADS=1 \
@@ -167,6 +169,7 @@ $$(build_private_libdir)/basecompiler$1-o.a $$(build_private_libdir)/basecompile
 		--startup-file=no --warn-overwrite=yes --depwarn=error -g$$(BOOTSTRAP_DEBUG_LEVEL) Base_compiler.jl --buildroot $$(RELBUILDROOT) --dataroot $$(RELDATADIR))
 	@mv $$@.tmp $$@
 $$(build_private_libdir)/sysbase$1.ji: $$(build_private_libdir)/basecompiler$1.$$(SHLIB_EXT) $$(JULIAHOME)/VERSION $$(BASE_SRCS) $$(STDLIB_SRCS)
+	@$$(call PRINT_STATUS,$$(BUILD_STATUS_BASE))
 	@$$(call PRINT_JULIA, cd $$(JULIAHOME)/base && \
 	if ! JULIA_BINDIR=$$(call cygpath_w,$$(build_bindir)) \
 	     WINEPATH="$$(call cygpath_w,$$(build_bindir));$$$$WINEPATH" \
@@ -182,6 +185,7 @@ endef
 
 define sysimg_builder
 $$(build_private_libdir)/sysbase$1-o.a $$(build_private_libdir)/sysbase$1-bc.a : $$(build_private_libdir)/sysbase$1-%.a : $$(build_private_libdir)/basecompiler$1.$$(SHLIB_EXT) $$(JULIAHOME)/VERSION $$(BASE_SRCS) $$(STDLIB_SRCS)
+	@$$(call PRINT_STATUS,$$(BUILD_STATUS_BASE))
 	@$$(call PRINT_JULIA, cd $$(JULIAHOME)/base && \
 	if ! JULIA_BINDIR=$$(call cygpath_w,$$(build_bindir)) \
 	     WINEPATH="$$(call cygpath_w,$$(build_bindir));$$$$WINEPATH" \
@@ -193,6 +197,7 @@ $$(build_private_libdir)/sysbase$1-o.a $$(build_private_libdir)/sysbase$1-bc.a :
 	fi )
 	@mv $$@.tmp $$@
 $$(build_private_libdir)/sys$1-o.a $$(build_private_libdir)/sys$1-bc.a : $$(build_private_libdir)/sys$1-%.a : $4 $$(JULIAHOME)/contrib/generate_precompile.jl
+	@$$(call PRINT_STATUS,$$(BUILD_STATUS_SYSIMAGE))
 	@$$(call PRINT_JULIA, cd $$(JULIAHOME)/base && \
 	if ! JULIA_BINDIR=$$(call cygpath_w,$(build_bindir)) \
 		 WINEPATH="$$(call cygpath_w,$$(build_bindir));$$$$WINEPATH" \

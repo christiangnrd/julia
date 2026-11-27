@@ -2169,6 +2169,20 @@ PRINT_DTRACE = printf "%s\n" $(call shell_escape,$(1)); $(1)
 
 endif # VERBOSE
 
+# Reports of the stage that the build is at, for terminals that take the Program Status
+# Protocol (OSC 7501): https://www.superlogical.com/rex/docs/build/program-status
+# A report is a state, followed for the stages by a message, which has to be encoded as
+# base64: "Building dependencies...", "Building the runtime...", "Building Core & Compiler...",
+# "Building Base...", "Building stdlibs..." and "Outputting sysimage...".
+BUILD_STATUS_DEPS := working:msg=QnVpbGRpbmcgZGVwZW5kZW5jaWVzLi4u
+BUILD_STATUS_RUNTIME := working:msg=QnVpbGRpbmcgdGhlIHJ1bnRpbWUuLi4=
+BUILD_STATUS_CORE := working:msg=QnVpbGRpbmcgQ29yZSAmIENvbXBpbGVyLi4u
+BUILD_STATUS_BASE := working:msg=QnVpbGRpbmcgQmFzZS4uLg==
+BUILD_STATUS_STDLIBS := working:msg=QnVpbGRpbmcgc3RkbGlicy4uLg==
+BUILD_STATUS_SYSIMAGE := working:msg=T3V0cHV0dGluZyBzeXNpbWFnZS4uLg==
+BUILD_STATUS_DONE := done
+PRINT_STATUS = if [ -t 1 ] && [ "$$CI" != true ]; then printf '\033]7501;state=%s:app=make\033\\' $(1); fi
+
 # Makefile debugging trick:
 # call print-VARIABLE to see the runtime value of any variable
 # (hardened against any special characters appearing in the output)
